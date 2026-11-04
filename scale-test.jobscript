@@ -1,0 +1,40 @@
+#!/bin/bash
+echo "Setting up software"
+source /cvmfs/dune.opensciencegrid.org/products/dune/setup_dune.sh
+setup xrootd v5_5_5a -q e28:p3915:prof
+python --version
+echo "-------------------"
+
+if [ -n "$venv" ]; then
+  source ${venv}/bin/activate
+fi
+
+# Try to get an unprocessed file from this stage
+# The justin-get-file command must ALWAYS be present, even for MC workflows
+echo "Getting file"
+did_pfn_rse=`$JUSTIN_PATH/justin-get-file`
+echo "Got $did_pfn_rse"
+if [ "$did_pfn_rse" != "" ] ; then
+  did=`echo $did_pfn_rse | cut -f1 -d' '`
+  pfn=`echo $did_pfn_rse | cut -f2 -d' '`
+  rse=`echo $did_pfn_rse | cut -f3 -d' '`
+
+  if [ -n "$pfn_override" ]; then
+    pfn=${pfn_override}
+  fi
+
+  now=$(date -u +"%Y%m%dT%H%M%SZ")
+  jobid=`echo "${JUSTIN_JOBSUB_ID:-1}" | cut -f1 -d'@' | sed -e "s/\./_/"`
+  stageid=${JUSTIN_STAGE_ID:-1}
+
+  LD_PRELOAD=${XROOTD_LIB}/libXrdPosixPreload.so python \
+      ${job_stuff}/stream_bytes.py ${pfn} -c ${job_stuff}/scale-test.yaml \
+      --stream-maxbytes 81920 \
+      -o scale-test-${now}-${jobid}-${stageid}.json
+
+  if [ $? = 0 ] ; then
+    # If echo returns 0, then say we processed the file successfully
+    echo "$pfn" > justin-processed-pfns.txt
+  fi
+fi
+exit 0
