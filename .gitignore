@@ -1,0 +1,3 @@
+# scale-test local database, logs and ID files
+state/
+__pycache__/

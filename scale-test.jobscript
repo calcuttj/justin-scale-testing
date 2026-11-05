@@ -5,9 +5,21 @@ setup xrootd v5_5_5a -q e28:p3915:prof
 python --version
 echo "-------------------"
 
-if [ -n "$venv" ]; then
-  source ${venv}/bin/activate
-fi
+# Make N copies of a file: NAME.bin -> NAME.dup1.bin, NAME.dup2.bin, ...
+# (suffix rather than prefix so every output still starts with the tag)
+duplicate_n() {
+    name=$1
+    n=$2
+    a=1
+    while (( a <= n )); do
+        cp ${name} ${name%.bin}.dup${a}.bin
+        a=$(( a + 1 ))
+    done
+}
+
+# Prefix for every output filename, so a scenario's outputs are easy to find.
+# scale-test sets this to st-<scenario> unless the suite overrides it.
+tag=${scale_test_tag:-scale-test}
 
 # Try to get an unprocessed file from this stage
 # The justin-get-file command must ALWAYS be present, even for MC workflows
@@ -27,14 +39,66 @@ if [ "$did_pfn_rse" != "" ] ; then
   jobid=`echo "${JUSTIN_JOBSUB_ID:-1}" | cut -f1 -d'@' | sed -e "s/\./_/"`
   stageid=${JUSTIN_STAGE_ID:-1}
 
-  LD_PRELOAD=${XROOTD_LIB}/libXrdPosixPreload.so python \
-      ${job_stuff}/stream_bytes.py ${pfn} -c ${job_stuff}/scale-test.yaml \
-      --stream-maxbytes 81920 \
-      -o scale-test-${now}-${jobid}-${stageid}.json
+  stream_maxbytes=${stream_maxbytes:-81920}
+  stream_width=${stream_width:-8192}
+  stream_downtime=${stream_downtime:--1}
 
-  if [ $? = 0 ] ; then
-    # If echo returns 0, then say we processed the file successfully
-    echo "$pfn" > justin-processed-pfns.txt
+  LD_PRELOAD=${XROOTD_LIB}/libXrdPosixPreload.so python \
+      ${job_stuff}/stream_bytes.py ${pfn} \
+      --stream-maxbytes ${stream_maxbytes} \
+      --stream-width ${stream_width} \
+      --stream-downtime ${stream_downtime} \
+      -o ${tag}.metrics.${now}.${jobid}.${stageid}.json
+
+  stream_exit=$?
+  if [ $stream_exit -ne 0 ]; then
+    echo "Failure streaming (exit:${stream_exit})"
+    exit $stream_exit
   fi
+
+  cat ${tag}.metrics.${now}.${jobid}.${stageid}.json
+
+  # Generate random output
+  random_output_blocks=${random_output_blocks:-1}
+  number_random_dupes=${number_random_dupes:-2}
+  number_small_random_dupes=${number_small_random_dupes:-2}
+  random_output_name=${tag}.big.${now}.${jobid}.${stageid}.bin
+
+  echo "Generating ${random_output_blocks} 50MB blocks of random output"
+  dd if=/dev/urandom of=${random_output_name} \
+      bs=50M count=${random_output_blocks}
+  random_exit=$?
+  if [ $random_exit -ne 0 ]; then
+      echo "Failure making random output (exit:${random_exit})"
+      exit $random_exit
+  fi
+
+  # Make duplicates
+  duplicate_n $random_output_name $number_random_dupes
+
+  # Make 3 small (50MB) random files
+  small_random_output_name=${tag}.small.${now}.${jobid}.${stageid}.bin
+  dd if=/dev/urandom of=${small_random_output_name} \
+      bs=50M count=1
+  random_exit=$?
+  if [ $random_exit -ne 0 ]; then
+      echo "Failure making small random output (exit:${random_exit})"
+      exit $random_exit
+  fi
+
+  # Make duplicates
+  duplicate_n $small_random_output_name $number_small_random_dupes
+
+  # Sleep for some user-specified amount of time (default none)
+  sleep_time=${sleep_time:--1}
+  if (( sleep_time > 0 )); then
+      echo "Sleeping for $sleep_time seconds"
+      sleep ${sleep_time}
+  fi
+
+  # Every step above exits on failure, so reaching here means success.
+  # Report the allocated DID (not $pfn, which pfn_override may have replaced
+  # with a file justIN never allocated) so justIN marks the input processed.
+  echo "$did" > justin-processed-dids.txt
 fi
 exit 0

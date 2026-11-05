@@ -1,0 +1,69 @@
+# Ramp suite: the first steps of the justIN 2.0 scale-test plan
+# (1 -> 10 -> 500 -> 1000 jobs), single-file in/out workflows reading PDHD raw
+# data. Coordinate with production before going beyond 1000 jobs.
+#
+#   ./scale-test sync   suites/ramp.yaml
+#   ./scale-test show   suites/ramp.yaml smoke
+#   ./scale-test test   suites/ramp.yaml smoke --dev     # local, code from $PWD
+#   ./scale-test test   suites/ramp.yaml smoke           # as on a dunegpvm
+#   ./scale-test submit suites/ramp.yaml smoke --dry-run
+#
+# Paths (jobscript, dev paths) are relative to THIS file's directory.
+
+suite: ramp-2026-11
+instance: int
+
+defaults:
+  jobscript: ../scale-test.jobscript
+  workflow:                         # -> justin simple-workflow options
+    scope: usertests
+    lifetime_days: 1
+    max_distance: 30
+    rss_mib: 2000
+    wall_seconds: 3600
+    outputs:                        # PATTERN -> DESTINATION (dataset prefix, or https:// scratch dir)
+      - {pattern: '*.big.*.bin',   destination: scale-test-big}
+      - {pattern: '*.small.*.bin', destination: scale-test-small}
+  env:                              # jobscript env: identical for test and submit
+    # Directory holding stream_bytes.py. Set to the RCDS directory printed by
+    # your own `justin-cvmfs-upload` of a tar of scripts/.
+    job_stuff: /cvmfs/fifeuser1.opensciencegrid.org/sw/dune/REPLACE_WITH_RCDS_HASH
+    stream_maxbytes: 81920
+    stream_width: 8192
+    stream_downtime: -1
+    random_output_blocks: 1
+    number_random_dupes: 0
+    number_small_random_dupes: 0
+    sleep_time: 0
+
+# Local development only: used by `scale-test test --dev`, never by submit.
+dev:
+  justin_test_jobscript: ../../dune-justin/commands/justin-test-jobscript
+  justin: ../../dune-justin/commands/justin
+  x509_cert_dir: /cvmfs/grid.cern.ch/etc/grid-security/certificates
+  binds: ['${PWD}']
+  env:
+    job_stuff: '${PWD}'             # run from scale-testing/ to use local code
+    # pfn_override: root://...
+
+scenarios:
+  - name: smoke                     # 1 job
+    mql: "files where namespace=hd-protodune and core.data_tier=raw limit 1"
+
+  - name: ramp-10
+    extends: smoke
+    mql: "files where namespace=hd-protodune and core.data_tier=raw limit 10"
+
+  - name: ramp-500
+    extends: smoke
+    mql: "files where namespace=hd-protodune and core.data_tier=raw limit 500"
+
+  - name: ramp-1000
+    extends: smoke
+    mql: "files where namespace=hd-protodune and core.data_tier=raw limit 1000"
+
+  # Example of overriding defaults: one big + two small outputs, longer jobs.
+  - name: ramp-10-1big-2small-long
+    extends: ramp-10
+    env: {number_small_random_dupes: 1, sleep_time: 600}
+    workflow: {wall_seconds: 7200}
