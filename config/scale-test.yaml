@@ -1,4 +1,0 @@
-stream:
-    width: 8192 #Number of bytes
-    downtime: 0.01 #Number of seconds to sleep after a fetch 
-    maxbytes: 81920 
