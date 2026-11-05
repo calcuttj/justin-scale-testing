@@ -41,9 +41,9 @@ dev:
   justin_test_jobscript: ../../dune-justin/commands/justin-test-jobscript
   justin: ../../dune-justin/commands/justin
   x509_cert_dir: /cvmfs/grid.cern.ch/etc/grid-security/certificates
-  binds: ['${PWD}']
+  binds: ['${PWD}'] # means you have to be within the top-level of the scale-testing repo
   env:
-    job_stuff: '${PWD}'             # run from scale-testing/ to use local code
+    job_stuff: '${PWD}/scripts'             # run from scale-testing/ to use local code
     # pfn_override: root://...
 
 scenarios:
